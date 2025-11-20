@@ -7,9 +7,11 @@
 
 #pragma once
 
+#include "core/output.h"
 #include "effect/effect.h"
 #include "opengl/glutils.h"
 #include "scene/item.h"
+#include "scene/scene.h"
 
 #include "settings.h"
 #include "window.h"
@@ -40,8 +42,11 @@ struct BlurEffectData
     /// The region that should be blurred behind the frame
     std::optional<QRegion> frame;
 
-    /// The render data per screen. Screens can have different color spaces.
-    std::unordered_map<Output *, BlurRenderData> render;
+    /**
+     * The render data per render view, as they can have different
+     *  color spaces and even different windows on them
+     */
+    std::unordered_map<RenderView *, BlurRenderData> render;
 
     ItemEffect windowEffect;
 
@@ -81,6 +86,7 @@ public Q_SLOTS:
     void slotWindowDeleted(KWin::EffectWindow *w);
     void slotScreenAdded(KWin::Output *screen);
     void slotScreenRemoved(KWin::Output *screen);
+    void slotViewRemoved(KWin::RenderView *view);
     void slotPropertyNotify(KWin::EffectWindow *w, long atom);
     void setupDecorationConnections(EffectWindow *w);
 
@@ -106,7 +112,7 @@ private:
      * @remark This method shall not be called outside of BlurEffect::blur.
      * @return The cached static blur texture. The texture will be created if it doesn't exist.
      */
-    GLTexture *ensureStaticBlurTexture(const Output *output, const RenderTarget &renderTarget);
+    GLTexture *ensureStaticBlurTexture(const Output *screen, const RenderTarget &renderTarget);
     GLTexture *ensureNoiseTexture();
 
     /**
@@ -121,7 +127,7 @@ private:
      * @remark This method shall not be called outside of BlurEffect::blur.
      * @return A pointer to the texture, or nullptr if an error occurred.
      */
-    GLTexture *createStaticBlurTextureWayland(const Output *output, const RenderTarget &renderTarget, const GLenum &textureFormat);
+    GLTexture *createStaticBlurTextureWayland(const Output *screen, const RenderTarget &renderTarget, const GLenum &textureFormat);
 
     /**
      * Creates a composite static blur texture containing images for all screens.
@@ -183,7 +189,7 @@ private:
     long net_wm_blur_region = 0;
     QRegion m_paintedArea; // keeps track of all painted areas (from bottom to top)
     QRegion m_currentBlur; // keeps track of the currently blured area of the windows(from bottom to top)
-    Output *m_currentScreen = nullptr;
+    RenderView *m_currentView = nullptr;
 
     size_t m_iterationCount; // number of times the texture will be downsized to half size
     int m_offset;
