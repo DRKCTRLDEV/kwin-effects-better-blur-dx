@@ -580,41 +580,41 @@ void BlurEffect::prePaintWindow(EffectWindow *w, WindowPrePaintData &data, std::
     effects->prePaintWindow(w, data, presentTime);
 
     if (!staticBlur) {
-        const QRegion oldOpaque = data.opaque;
-        if (data.opaque.intersects(m_currentBlur)) {
-            // to blur an area partially we have to shrink the opaque area of a window
-            QRegion newOpaque;
-            for (const QRect &rect : data.opaque) {
-                newOpaque += rect.adjusted(m_expandSize, m_expandSize, -m_expandSize, -m_expandSize);
-            }
-            data.opaque = newOpaque;
-
-            // we don't have to blur a region we don't see
-            m_currentBlur -= newOpaque;
+    const QRegion oldOpaque = data.opaque;
+    if (data.opaque.intersects(m_currentBlur)) {
+        // to blur an area partially we have to shrink the opaque area of a window
+        QRegion newOpaque;
+        for (const QRect &rect : data.opaque) {
+            newOpaque += rect.adjusted(m_expandSize, m_expandSize, -m_expandSize, -m_expandSize);
         }
+        data.opaque = newOpaque;
 
-        // if we have to paint a non-opaque part of this window that hasWindowBehind with the
-        // currently blurred region we have to redraw the whole region
-        if ((data.paint - oldOpaque).intersects(m_currentBlur)) {
+        // we don't have to blur a region we don't see
+        m_currentBlur -= newOpaque;
+    }
+
+    // if we have to paint a non-opaque part of this window that hasWindowBehind with the
+    // currently blurred region we have to redraw the whole region
+    if ((data.paint - oldOpaque).intersects(m_currentBlur)) {
+        data.paint += m_currentBlur;
+    }
+
+    // if this window or a window underneath the blurred area is painted again we have to
+    // blur everything
+    if (m_paintedArea.intersects(blurArea) || data.paint.intersects(blurArea)) {
+        data.paint += blurArea;
+        // we have to check again whether we do not damage a blurred area
+        // of a window
+        if (blurArea.intersects(m_currentBlur)) {
             data.paint += m_currentBlur;
         }
-
-        // if this window or a window underneath the blurred area is painted again we have to
-        // blur everything
-        if (m_paintedArea.intersects(blurArea) || data.paint.intersects(blurArea)) {
-            data.paint += blurArea;
-            // we have to check again whether we do not damage a blurred area
-            // of a window
-            if (blurArea.intersects(m_currentBlur)) {
-                data.paint += m_currentBlur;
-            }
-        }
-
-        m_currentBlur += blurArea;
-        if (!blurArea.isEmpty()) {
-            data.mask |= Effect::PAINT_WINDOW_TRANSLUCENT;
-        }
     }
+
+    m_currentBlur += blurArea;
+    if (!blurArea.isEmpty()) {
+        data.mask |= Effect::PAINT_WINDOW_TRANSLUCENT;
+    }
+    } // !staticBlur
 
     m_paintedArea -= data.opaque;
     m_paintedArea += data.paint;
@@ -869,12 +869,12 @@ void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarg
 
     // Fetch the pixels behind the shape that is going to be blurred.
     if (!staticBlurTexture) {
-        const QRegion dirtyRegion = region & backgroundRect;
-        for (const QRect &dirtyRect : dirtyRegion) {
-            const auto destination = snapToPixelGrid(scaledRect(dirtyRect, viewport.scale())).translated(-deviceBackgroundRect.topLeft());
-            renderInfo.framebuffers[0]->blitFromRenderTarget(renderTarget, viewport, dirtyRect, destination);
-        }
+    const QRegion dirtyRegion = region & backgroundRect;
+    for (const QRect &dirtyRect : dirtyRegion) {
+        const auto destination = snapToPixelGrid(scaledRect(dirtyRect, viewport.scale())).translated(-deviceBackgroundRect.topLeft());
+        renderInfo.framebuffers[0]->blitFromRenderTarget(renderTarget, viewport, dirtyRect, destination);
     }
+    } // !staticBlurTexture
 
     // Upload the geometry: the first 6 vertices are used when downsampling and upsampling offscreen,
     // the remaining vertices are used when rendering on the screen.
@@ -981,70 +981,71 @@ void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarg
     vbo->bindArrays();
 
     if (staticBlurTexture) {
-        ShaderManager::instance()->pushShader(m_texture.shader.get());
+    ShaderManager::instance()->pushShader(m_texture.shader.get());
+
+    QMatrix4x4 projectionMatrix;
+    projectionMatrix = viewport.projectionMatrix();
+    projectionMatrix.translate(deviceBackgroundRect.x(), deviceBackgroundRect.y());
+
+    QRectF screenGeometry;
+    if (m_currentScreen) {
+        screenGeometry = scaledRect(m_currentScreen->geometryF(), viewport.scale());
+    }
+
+    m_texture.shader->setUniform(m_texture.mvpMatrixLocation, projectionMatrix);
+    m_texture.shader->setUniform(m_texture.textureSizeLocation, QVector2D(staticBlurTexture->size().width(), staticBlurTexture->size().height()));
+    m_texture.shader->setUniform(m_texture.texStartPosLocation, QVector2D(deviceBackgroundRect.x() - screenGeometry.x(), deviceBackgroundRect.y() - screenGeometry.y()));
+    m_texture.shader->setUniform(m_texture.blurSizeLocation, QVector2D(deviceBackgroundRect.width(), deviceBackgroundRect.height()));
+    m_texture.shader->setUniform(m_texture.topCornerRadiusLocation, topCornerRadius);
+    m_texture.shader->setUniform(m_texture.bottomCornerRadiusLocation, bottomCornerRadius);
+    m_texture.shader->setUniform(m_texture.antialiasingLocation, m_settings.roundedCorners.antialiasing);
+    m_texture.shader->setUniform(m_texture.opacityLocation, static_cast<float>(opacity));
+
+    staticBlurTexture->bind();
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    vbo->draw(GL_TRIANGLES, 6, vertexCount);
+
+    glDisable(GL_BLEND);
+    ShaderManager::instance()->popShader();
+    } // staticBlurTexture
+    else {
+    // The downsample pass of the dual Kawase algorithm: the background will be scaled down 50% every iteration.
+    {
+        ShaderManager::instance()->pushShader(m_downsamplePass.shader.get());
 
         QMatrix4x4 projectionMatrix;
-        projectionMatrix = viewport.projectionMatrix();
-        projectionMatrix.translate(deviceBackgroundRect.x(), deviceBackgroundRect.y());
+        projectionMatrix.ortho(QRectF(0.0, 0.0, deviceBackgroundRect.width(), deviceBackgroundRect.height()));
 
-        QRectF screenGeometry;
-        if (m_currentScreen) {
-            screenGeometry = scaledRect(m_currentScreen->geometryF(), viewport.scale());
+        m_downsamplePass.shader->setUniform(m_downsamplePass.mvpMatrixLocation, projectionMatrix);
+        m_downsamplePass.shader->setUniform(m_downsamplePass.offsetLocation, float(m_offset));
+        m_downsamplePass.shader->setUniform(m_downsamplePass.colorMatrixLocation, m_colorMatrix);
+        m_downsamplePass.shader->setUniform(m_downsamplePass.transformColorsLocation, true);
+
+        for (size_t i = 1; i < renderInfo.framebuffers.size(); ++i) {
+            const auto &read = renderInfo.framebuffers[i - 1];
+            const auto &draw = renderInfo.framebuffers[i];
+
+            const QVector2D halfpixel(0.5 / read->colorAttachment()->width(),
+                                      0.5 / read->colorAttachment()->height());
+            m_downsamplePass.shader->setUniform(m_downsamplePass.halfpixelLocation, halfpixel);
+
+            read->colorAttachment()->bind();
+
+            GLFramebuffer::pushFramebuffer(draw.get());
+            vbo->draw(GL_TRIANGLES, 0, 6);
+
+            if (i == 1) {
+                m_downsamplePass.shader->setUniform(m_downsamplePass.transformColorsLocation, false);
+            }
         }
 
-        m_texture.shader->setUniform(m_texture.mvpMatrixLocation, projectionMatrix);
-        m_texture.shader->setUniform(m_texture.textureSizeLocation, QVector2D(staticBlurTexture->size().width(), staticBlurTexture->size().height()));
-        m_texture.shader->setUniform(m_texture.texStartPosLocation, QVector2D(deviceBackgroundRect.x() - screenGeometry.x(), deviceBackgroundRect.y() - screenGeometry.y()));
-        m_texture.shader->setUniform(m_texture.blurSizeLocation, QVector2D(deviceBackgroundRect.width(), deviceBackgroundRect.height()));
-        m_texture.shader->setUniform(m_texture.topCornerRadiusLocation, topCornerRadius);
-        m_texture.shader->setUniform(m_texture.bottomCornerRadiusLocation, bottomCornerRadius);
-        m_texture.shader->setUniform(m_texture.antialiasingLocation, m_settings.roundedCorners.antialiasing);
-        m_texture.shader->setUniform(m_texture.opacityLocation, static_cast<float>(opacity));
-
-        staticBlurTexture->bind();
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-        vbo->draw(GL_TRIANGLES, 6, vertexCount);
-
-        glDisable(GL_BLEND);
         ShaderManager::instance()->popShader();
     }
-    else {
-        // The downsample pass of the dual Kawase algorithm: the background will be scaled down 50% every iteration.
-        {
-            ShaderManager::instance()->pushShader(m_downsamplePass.shader.get());
 
-            QMatrix4x4 projectionMatrix;
-            projectionMatrix.ortho(QRectF(0.0, 0.0, deviceBackgroundRect.width(), deviceBackgroundRect.height()));
-
-            m_downsamplePass.shader->setUniform(m_downsamplePass.mvpMatrixLocation, projectionMatrix);
-            m_downsamplePass.shader->setUniform(m_downsamplePass.offsetLocation, float(m_offset));
-            m_downsamplePass.shader->setUniform(m_downsamplePass.colorMatrixLocation, m_colorMatrix);
-            m_downsamplePass.shader->setUniform(m_downsamplePass.transformColorsLocation, true);
-
-            for (size_t i = 1; i < renderInfo.framebuffers.size(); ++i) {
-                const auto &read = renderInfo.framebuffers[i - 1];
-                const auto &draw = renderInfo.framebuffers[i];
-
-                const QVector2D halfpixel(0.5 / read->colorAttachment()->width(),
-                                          0.5 / read->colorAttachment()->height());
-                m_downsamplePass.shader->setUniform(m_downsamplePass.halfpixelLocation, halfpixel);
-
-                read->colorAttachment()->bind();
-
-                GLFramebuffer::pushFramebuffer(draw.get());
-                vbo->draw(GL_TRIANGLES, 0, 6);
-
-                if (i == 1) {
-                    m_downsamplePass.shader->setUniform(m_downsamplePass.transformColorsLocation, false);
-                }
-            }
-
-            ShaderManager::instance()->popShader();
-        }
-
-        // The upsample pass of the dual Kawase algorithm: the background will be scaled up 200% every iteration.
+    // The upsample pass of the dual Kawase algorithm: the background will be scaled up 200% every iteration.
+    {
         ShaderManager::instance()->pushShader(m_upsamplePass.shader.get());
 
         QMatrix4x4 projectionMatrix;
@@ -1122,6 +1123,7 @@ void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarg
         glDisable(GL_BLEND);
         ShaderManager::instance()->popShader();
     }
+    } // !staticBlurTexture
 
     vbo->unbindArrays();
 }
