@@ -51,6 +51,9 @@ struct BlurEffectData
 
     ItemEffect windowEffect;
 
+    std::optional<qreal> contrast;
+    std::optional<qreal> saturation;
+
     bool hasWindowBehind;
 };
 
@@ -100,12 +103,12 @@ private:
     bool shouldForceBlur(const EffectWindow *w) const;
     void updateBlurRegion(EffectWindow *w, bool geometryChanged = false);
     bool hasStaticBlur(EffectWindow *w);
-    QMatrix4x4 colorMatrix(qreal contrast, qreal saturation, qreal brightness);
+    QMatrix4x4 colorMatrix(const BlurEffectData &params) const;
 
     /*
      * @param w The pointer to the window being blurred, nullptr if an image is being blurred.
      */
-    void blur(BlurRenderData &renderInfo, const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data);
+    void blur(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data);
     void blur(GLTexture *texture);
 
     /**
@@ -244,6 +247,7 @@ private:
     QList<const EffectWindow*> m_blurWhenTransformed;
 
     QMap<EffectWindow *, QMetaObject::Connection> windowBlurChangedConnections;
+    QMap<EffectWindow *, QMetaObject::Connection> windowContrastChangedConnections;
     QMap<EffectWindow *, QMetaObject::Connection> windowFrameGeometryChangedConnections;
     QMap<Output *, QMetaObject::Connection> screenChangedConnections;
     std::unordered_map<EffectWindow *, BlurEffectData> m_windows;

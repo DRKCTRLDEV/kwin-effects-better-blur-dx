@@ -45,6 +45,7 @@
 #include <KDecoration3/Decoration>
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 Q_LOGGING_CATEGORY(KWIN_BLUR, "kwin_better_blur_dx", QtWarningMsg)
@@ -282,13 +283,14 @@ void BlurEffect::initBlurStrengthValues()
     }
 }
 
-QMatrix4x4 BlurEffect::colorMatrix(qreal contrast, qreal saturation, qreal brightness)
+QMatrix4x4 BlurEffect::colorMatrix(const BlurEffectData &params) const
 {
     QMatrix4x4 satMatrix; // saturation
     QMatrix4x4 contMatrix; // contrast
     QMatrix4x4 brightMatrix; // brightess
 
     // Saturation matrix
+    const qreal saturation = params.saturation.value_or(m_settings.general.saturation);
     if (!qFuzzyCompare(saturation, 1.0)) {
         const qreal rval = (1.0 - saturation) * .2126;
         const qreal gval = (1.0 - saturation) * .7152;
@@ -301,6 +303,7 @@ QMatrix4x4 BlurEffect::colorMatrix(qreal contrast, qreal saturation, qreal brigh
     }
 
     // Contrast Matrix
+    const qreal contrast = params.contrast.value_or(m_settings.general.contrast);
     if (!qFuzzyCompare(contrast, 1.0)) {
         const float transl = (1.0 - contrast) / 2.0;
 
@@ -311,6 +314,7 @@ QMatrix4x4 BlurEffect::colorMatrix(qreal contrast, qreal saturation, qreal brigh
     }
 
     // Brightness matrix
+    const qreal brightness = m_settings.general.brightness;
     if (!qFuzzyCompare(brightness, 1.0)) {
         brightMatrix.scale(brightness, brightness, brightness);
     }
@@ -341,6 +345,8 @@ void BlurEffect::updateBlurRegion(EffectWindow *w, bool geometryChanged)
 {
     std::optional<QRegion> content;
     std::optional<QRegion> frame;
+    std::optional<qreal> saturation;
+    std::optional<qreal> contrast;
 
     if (net_wm_blur_region != XCB_ATOM_NONE) {
         const QByteArray value = w->readProperty(net_wm_blur_region, XCB_ATOM_CARDINAL, 32);
@@ -360,10 +366,14 @@ void BlurEffect::updateBlurRegion(EffectWindow *w, bool geometryChanged)
         }
     }
 
-    SurfaceInterface *surf = w->surface();
-
-    if (surf && surf->blur()) {
-        content = surf->blur()->region();
+    if (SurfaceInterface *surface = w->surface()) {
+        if (surface->blur()) {
+            content = surface->blur()->region();
+        }
+        if (surface->contrast()) {
+            saturation = surface->contrast()->saturation();
+            contrast = surface->contrast()->contrast();
+        }
     }
 
     if (auto internal = w->internalWindow()) {
@@ -395,6 +405,8 @@ void BlurEffect::updateBlurRegion(EffectWindow *w, bool geometryChanged)
         BlurEffectData &data = m_windows[w];
         data.content = content;
         data.frame = frame;
+        data.contrast = contrast;
+        data.saturation = saturation;
         data.windowEffect = ItemEffect(w->windowItem());
     } else if (!geometryChanged) { // Blur may disappear if this method is called when window geometry changes
         if (auto it = m_windows.find(w); it != m_windows.end()) {
@@ -425,6 +437,11 @@ void BlurEffect::slotWindowAdded(EffectWindow *w)
 
     if (surf) {
         windowBlurChangedConnections[w] = connect(surf, &SurfaceInterface::blurChanged, this, [this, w]() {
+            if (w) {
+                updateBlurRegion(w);
+            }
+        });
+        windowContrastChangedConnections[w] = connect(surf, &SurfaceInterface::contrastChanged, this, [this, w]() {
             if (w) {
                 updateBlurRegion(w);
             }
@@ -465,6 +482,10 @@ void BlurEffect::slotWindowDeleted(EffectWindow *w)
     if (auto it = windowBlurChangedConnections.find(w); it != windowBlurChangedConnections.end()) {
         disconnect(*it);
         windowBlurChangedConnections.erase(it);
+    }
+    if (auto it = windowContrastChangedConnections.find(w); it != windowContrastChangedConnections.end()) {
+        disconnect(*it);
+        windowContrastChangedConnections.erase(it);
     }
     if (auto it = windowFrameGeometryChangedConnections.find(w); it != windowFrameGeometryChangedConnections.end()) {
         disconnect(*it);
@@ -762,14 +783,7 @@ bool BlurEffect::shouldForceBlur(const EffectWindow *w) const
 
 void BlurEffect::drawWindow(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data)
 {
-    auto it = m_windows.find(w);
-    if (it != m_windows.end()) {
-        BlurEffectData &blurInfo = it->second;
-        BlurRenderData &renderInfo = blurInfo.render[m_currentView];
-        if (shouldBlur(w, mask, data)) {
-            blur(renderInfo, renderTarget, viewport, w, mask, region, data);
-        }
-    }
+    blur(renderTarget, viewport, w, mask, region, data);
 
     // Draw the window over the blurred area
     effects->drawWindow(renderTarget, viewport, w, mask, region, data);
@@ -835,8 +849,19 @@ GLTexture *BlurEffect::ensureNoiseTexture()
     return noiseTexture.get();
 }
 
-void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data)
+void BlurEffect::blur(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data)
 {
+    auto it = m_windows.find(w);
+    if (it == m_windows.end()) {
+        return;
+    }
+
+    BlurEffectData &blurInfo = it->second;
+    BlurRenderData &renderInfo = blurInfo.render[m_currentView];
+    if (!shouldBlur(w, mask, data)) {
+        return;
+    }
+
     // Compute the effective blur shape. Note that if the window is transformed, so will be the blur shape.
     QRegion blurShape = w ? blurRegion(w).translated(w->pos().toPoint()) : region;
     if (data.xScale() != 1 || data.yScale() != 1) {
@@ -1221,7 +1246,7 @@ void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarg
         QMatrix4x4 projectionMatrix = viewport.projectionMatrix();
         projectionMatrix.translate(deviceBackgroundRect.x(), deviceBackgroundRect.y());
 
-        QMatrix4x4 colorMatrix = BlurEffect::colorMatrix(m_settings.general.contrast, m_settings.general.saturation, m_settings.general.brightness);
+        QMatrix4x4 colorMatrix = BlurEffect::colorMatrix(blurInfo);
 
         GLFramebuffer::popFramebuffer();
         const auto &read = renderInfo.framebuffers[1];
@@ -1263,7 +1288,7 @@ void BlurEffect::blur(BlurRenderData &renderInfo, const RenderTarget &renderTarg
         QMatrix4x4 projectionMatrix = viewport.projectionMatrix();
         projectionMatrix.translate(deviceBackgroundRect.x(), deviceBackgroundRect.y());
 
-        QMatrix4x4 colorMatrix = BlurEffect::colorMatrix(m_settings.general.contrast, m_settings.general.saturation, m_settings.general.brightness);
+        QMatrix4x4 colorMatrix = BlurEffect::colorMatrix(blurInfo);
 
         GLFramebuffer::popFramebuffer();
         const auto &read = renderInfo.framebuffers[1];
@@ -1304,13 +1329,12 @@ void BlurEffect::blur(GLTexture *texture)
     const QRect textureRect = QRect(0, 0, texture->width(), texture->height());
     auto blurredFramebuffer = std::make_unique<GLFramebuffer>(texture);
 
-    BlurRenderData renderData;
     const RenderTarget renderTarget(blurredFramebuffer.get());
     const RenderViewport renderViewport(textureRect, 1.0, renderTarget);
     WindowPaintData data;
 
     GLFramebuffer::pushFramebuffer(blurredFramebuffer.get());
-    blur(renderData, renderTarget, renderViewport, nullptr, 0, textureRect, data);
+    blur(renderTarget, renderViewport, nullptr, 0, textureRect, data);
     GLFramebuffer::popFramebuffer();
 }
 
