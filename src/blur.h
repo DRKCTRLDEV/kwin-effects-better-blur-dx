@@ -177,10 +177,6 @@ private:
         int halfpixelLocation;
         int textureLocation;
 
-        int noiseLocation;
-        int noiseTextureLocation;
-        int noiseTextureSizeLocation;
-
         int topCornerRadiusLocation;
         int bottomCornerRadiusLocation;
         int antialiasingLocation;
@@ -193,6 +189,17 @@ private:
         int refractionRGBFringingLocation;
         int refractionTextureRepeatModeLocation;
     } m_upsamplePass;
+
+    struct
+    {
+        std::unique_ptr<GLShader> shader;
+        int mvpMatrixLocation;
+        int noiseTextureSizeLocation;
+
+        std::unique_ptr<GLTexture> noiseTexture;
+        qreal noiseTextureScale = 1.0;
+        int noiseTextureStength = 0;
+    } m_noisePass;
 
     struct
     {
@@ -211,16 +218,13 @@ private:
     bool m_valid = false;
     long net_wm_blur_region = 0;
     QRegion m_paintedArea; // keeps track of all painted areas (from bottom to top)
-    QRegion m_currentBlur; // keeps track of the currently blured area of the windows(from bottom to top)
+    QRegion m_currentBlur; // keeps track of currently blurred area of the windows (from bottom to top)
     RenderView *m_currentView = nullptr;
 
     size_t m_iterationCount; // number of times the texture will be downsized to half size
     int m_offset;
     int m_expandSize;
-
-    std::unique_ptr<GLTexture> noiseTexture;
-    qreal noiseTextureScale = 1.0;
-    int noiseTextureStength = 0;
+    int m_noiseStrength;
 
     BlurSettings m_settings;
 

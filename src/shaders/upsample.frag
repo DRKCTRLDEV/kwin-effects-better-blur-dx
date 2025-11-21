@@ -34,10 +34,6 @@ uniform sampler2D texUnit;
 uniform float offset;
 uniform vec2 halfpixel;
 
-uniform bool noise;
-uniform sampler2D noiseTexture;
-uniform vec2 noiseTextureSize;
-
 uniform float edgeSizePixels;
 uniform float refractionStrength;
 uniform float refractionNormalPow;
@@ -140,10 +136,6 @@ void main(void)
         }
 
         sum /= weightSum;
-    }
-
-    if (noise) {
-        sum += vec4(texture2D(noiseTexture, gl_FragCoord.xy / noiseTextureSize).rrr, 0.0);
     }
 
     gl_FragColor = roundedRectangle(uv * blurSize, sum.rgb);

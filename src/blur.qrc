@@ -8,6 +8,8 @@
   <file>shaders/contrast_rounded.vert</file>
   <file>shaders/downsample.frag</file>
   <file>shaders/downsample_core.frag</file>
+  <file>shaders/noise.frag</file>
+  <file>shaders/noise_core.frag</file>
   <file>shaders/texture.frag</file>
   <file>shaders/texture_core.frag</file>
   <file>shaders/upsample.frag</file>

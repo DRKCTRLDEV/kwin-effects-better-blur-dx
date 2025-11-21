@@ -124,9 +124,6 @@ BlurEffect::BlurEffect()
         m_upsamplePass.offsetLocation = m_upsamplePass.shader->uniformLocation("offset");
         m_upsamplePass.halfpixelLocation = m_upsamplePass.shader->uniformLocation("halfpixel");
         m_upsamplePass.textureLocation = m_upsamplePass.shader->uniformLocation("texUnit");
-        m_upsamplePass.noiseLocation = m_upsamplePass.shader->uniformLocation("noise");
-        m_upsamplePass.noiseTextureLocation = m_upsamplePass.shader->uniformLocation("noiseTexture");
-        m_upsamplePass.noiseTextureSizeLocation = m_upsamplePass.shader->uniformLocation("noiseTextureSize");
         m_upsamplePass.topCornerRadiusLocation = m_upsamplePass.shader->uniformLocation("topCornerRadius");
         m_upsamplePass.bottomCornerRadiusLocation = m_upsamplePass.shader->uniformLocation("bottomCornerRadius");
         m_upsamplePass.antialiasingLocation = m_upsamplePass.shader->uniformLocation("antialiasing");
@@ -137,6 +134,17 @@ BlurEffect::BlurEffect()
         m_upsamplePass.refractionNormalPowLocation = m_upsamplePass.shader->uniformLocation("refractionNormalPow");
         m_upsamplePass.refractionRGBFringingLocation = m_upsamplePass.shader->uniformLocation("refractionRGBFringing");
         m_upsamplePass.refractionTextureRepeatModeLocation = m_upsamplePass.shader->uniformLocation("refractionTextureRepeatMode");
+    }
+
+    m_noisePass.shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture,
+                                                                           QStringLiteral(":/effects/better_blur_dx/shaders/vertex.vert"),
+                                                                           QStringLiteral(":/effects/better_blur_dx/shaders/noise.frag"));
+    if (!m_noisePass.shader) {
+        qCWarning(KWIN_BLUR) << "Failed to load noise pass shader";
+        return;
+    } else {
+        m_noisePass.mvpMatrixLocation = m_noisePass.shader->uniformLocation("modelViewProjectionMatrix");
+        m_noisePass.noiseTextureSizeLocation = m_noisePass.shader->uniformLocation("noiseTextureSize");
     }
 
     m_texture.shader = ShaderManager::instance()->generateShaderFromFile(ShaderTrait::MapTexture,
@@ -328,9 +336,11 @@ void BlurEffect::reconfigure(ReconfigureFlags flags)
 {
     m_settings.read();
 
-    m_iterationCount = blurStrengthValues[m_settings.general.blurStrength].iteration;
-    m_offset = blurStrengthValues[m_settings.general.blurStrength].offset;
+    int blurStrength = m_settings.general.blurStrength;
+    m_iterationCount = blurStrengthValues[blurStrength].iteration;
+    m_offset = blurStrengthValues[blurStrength].offset;
     m_expandSize = blurOffsets[m_iterationCount - 1].expandSize;
+    m_noiseStrength = m_settings.general.noiseStrength;
     m_staticBlurTextures.clear();
 
     for (EffectWindow *w : effects->stackingOrder()) {
@@ -815,12 +825,12 @@ GLTexture *BlurEffect::ensureStaticBlurTexture(const Output *screen, const Rende
 
 GLTexture *BlurEffect::ensureNoiseTexture()
 {
-    if (m_settings.general.noiseStrength == 0) {
+    if (m_noiseStrength == 0) {
         return nullptr;
     }
 
     const qreal scale = std::max(1.0, QGuiApplication::primaryScreen()->logicalDotsPerInch() / 96.0);
-    if (!noiseTexture || noiseTextureScale != scale || noiseTextureStength != m_settings.general.noiseStrength) {
+    if (!m_noisePass.noiseTexture || m_noisePass.noiseTextureScale != scale || m_noisePass.noiseTextureStength != m_noiseStrength) {
         // Init randomness based on time
         std::srand((uint)QTime::currentTime().msec());
 
@@ -830,23 +840,23 @@ GLTexture *BlurEffect::ensureNoiseTexture()
             uint8_t *noiseImageLine = (uint8_t *)noiseImage.scanLine(y);
 
             for (int x = 0; x < noiseImage.width(); x++) {
-                noiseImageLine[x] = std::rand() % m_settings.general.noiseStrength;
+                noiseImageLine[x] = std::rand() % m_noiseStrength;
             }
         }
 
         noiseImage = noiseImage.scaled(noiseImage.size() * scale);
 
-        noiseTexture = GLTexture::upload(noiseImage);
-        if (!noiseTexture) {
+        m_noisePass.noiseTexture = GLTexture::upload(noiseImage);
+        if (!m_noisePass.noiseTexture) {
             return nullptr;
         }
-        noiseTexture->setFilter(GL_NEAREST);
-        noiseTexture->setWrapMode(GL_REPEAT);
-        noiseTextureScale = scale;
-        noiseTextureStength = m_settings.general.noiseStrength;
+        m_noisePass.noiseTexture->setFilter(GL_NEAREST);
+        m_noisePass.noiseTexture->setWrapMode(GL_REPEAT);
+        m_noisePass.noiseTextureScale = scale;
+        m_noisePass.noiseTextureStength = m_noiseStrength;
     }
 
-    return noiseTexture.get();
+    return m_noisePass.noiseTexture.get();
 }
 
 void BlurEffect::blur(const RenderTarget &renderTarget, const RenderViewport &viewport, EffectWindow *w, int mask, const QRegion &region, WindowPaintData &data)
@@ -1168,7 +1178,6 @@ void BlurEffect::blur(const RenderTarget &renderTarget, const RenderViewport &vi
         m_upsamplePass.shader->setUniform(m_upsamplePass.topCornerRadiusLocation, static_cast<float>(0));
         m_upsamplePass.shader->setUniform(m_upsamplePass.bottomCornerRadiusLocation, static_cast<float>(0));
         m_upsamplePass.shader->setUniform(m_upsamplePass.mvpMatrixLocation, projectionMatrix);
-        m_upsamplePass.shader->setUniform(m_upsamplePass.noiseLocation, false);
         m_upsamplePass.shader->setUniform(m_upsamplePass.offsetLocation, float(m_offset));
 
         // apply refraction ONLY on the last pass, otherwise this ends in weird stacking
@@ -1191,17 +1200,6 @@ void BlurEffect::blur(const RenderTarget &renderTarget, const RenderViewport &vi
         // The last upsampling pass is rendered on the screen, not in framebuffers[0].
         GLFramebuffer::popFramebuffer();
         const auto &read = renderInfo.framebuffers[1];
-
-        if (m_settings.general.noiseStrength > 0) {
-            if (auto *noiseTexture = ensureNoiseTexture()) {
-                m_upsamplePass.shader->setUniform(m_upsamplePass.noiseLocation, true);
-                m_upsamplePass.shader->setUniform(m_upsamplePass.noiseTextureSizeLocation, QVector2D(noiseTexture->width(), noiseTexture->height()));
-
-                glUniform1i(m_upsamplePass.noiseTextureLocation, 1);
-                glActiveTexture(GL_TEXTURE1);
-                noiseTexture->bind();
-            }
-        }
 
         glUniform1i(m_upsamplePass.textureLocation, 0);
         glActiveTexture(GL_TEXTURE0);
@@ -1319,6 +1317,35 @@ void BlurEffect::blur(const RenderTarget &renderTarget, const RenderViewport &vi
         ShaderManager::instance()->popShader();
     }
 
+    if (m_noiseStrength > 0) {
+        // Apply an additive noise onto the blurred image. The noise is useful to mask banding
+        // artifacts, which often happens due to the smooth color transitions in the blurred image.
+
+        glEnable(GL_BLEND);
+        if (opacity < 1.0) {
+            glBlendFunc(GL_CONSTANT_ALPHA, GL_ONE);
+        } else {
+            glBlendFunc(GL_ONE, GL_ONE);
+        }
+
+        if (GLTexture *noiseTexture = ensureNoiseTexture()) {
+            ShaderManager::instance()->pushShader(m_noisePass.shader.get());
+
+            QMatrix4x4 projectionMatrix = viewport.projectionMatrix();
+            projectionMatrix.translate(deviceBackgroundRect.x(), deviceBackgroundRect.y());
+
+            m_noisePass.shader->setUniform(m_noisePass.mvpMatrixLocation, projectionMatrix);
+            m_noisePass.shader->setUniform(m_noisePass.noiseTextureSizeLocation, QVector2D(noiseTexture->width(), noiseTexture->height()));
+
+            noiseTexture->bind();
+
+            vbo->draw(GL_TRIANGLES, 6, vertexCount);
+
+            ShaderManager::instance()->popShader();
+        }
+
+        glDisable(GL_BLEND);
+    }
     } // !staticBlurTexture
 
     vbo->unbindArrays();
