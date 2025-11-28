@@ -300,7 +300,7 @@ QMatrix4x4 BlurEffect::colorMatrix(const BlurEffectData &params) const
     }
 
     // Brightness matrix
-    const qreal brightness = m_settings.general.brightness;
+    const qreal brightness = params.brightness.value_or(m_settings.general.brightness);
     if (!qFuzzyCompare(brightness, 1.0)) {
         brightMatrix.scale(brightness, brightness, brightness);
     }
@@ -457,6 +457,9 @@ void BlurEffect::slotWindowClosed(EffectWindow *w)
      */
     if (w && w->isDeleted()) {
         BlurEffectData &data = m_windows[w];
+
+        const qreal brightness = data.brightness.value_or(m_settings.general.brightness);
+        data.brightness = std::min(brightness, 1.0);
 
         const qreal saturation = data.saturation.value_or(m_settings.general.saturation);
         data.saturation = std::min(saturation, 1.0);

@@ -54,6 +54,7 @@ struct BlurEffectData
 
     ItemEffect windowEffect;
 
+    std::optional<qreal> brightness;
     std::optional<qreal> contrast;
     std::optional<qreal> saturation;
 };
