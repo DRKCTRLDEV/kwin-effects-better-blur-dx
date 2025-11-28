@@ -24,11 +24,12 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_CXX_FLAGS_RELEASE "${CMAKE_CXX_FLAGS_RELEASE} -DQT_NO_DEBUG_OUTPUT")
 
+# User Build Options
+option(BETTERBLUR_X11 "Build Better Blur DX for KWin X11 instead of KWin Wayland" OFF)
+
+# Dependencies
 find_package(ECM REQUIRED NO_MODULE)
 set(CMAKE_MODULE_PATH ${CMAKE_MODULE_PATH} ${ECM_MODULE_PATH} ${ECM_KDE_MODULE_DIR})
-
-option(BETTERBLUR_WAYLAND "Whether to build Better Blur for Wayland if present." ON)
-option(BETTERBLUR_X11 "Whether to build Better Blur for X11 if present." ON)
 
 include(FeatureSummary)
 include(KDEInstallDirs)
@@ -72,26 +73,13 @@ find_package(epoxy REQUIRED)
 find_package(X11 REQUIRED)
 find_package(XCB REQUIRED COMPONENTS XCB)
 
-if(BETTERBLUR_WAYLAND)
-    find_package(KWin COMPONENTS
-        kwineffects
-    )
-    if (${KWin_FOUND})
-        find_package(KWinDBusInterface CONFIG REQUIRED)
-    else()
-        set(BETTERBLUR_WAYLAND OFF)
-    endif()
-endif()
 if(BETTERBLUR_X11)
-    find_package(KWinX11 COMPONENTS
-        kwineffects
-    )
-    if (${KWinX11_FOUND})
-        find_package(KWinX11DBusInterface CONFIG REQUIRED)
-        set(KWin_VERSION ${KWinX11_VERSION})
-    else()
-        set(BETTERBLUR_X11 OFF)
-    endif()
+    find_package(KWinX11 REQUIRED COMPONENTS kwineffects)
+    find_package(KWinX11DBusInterface CONFIG REQUIRED)
+    set(KWin_VERSION ${KWinX11_VERSION})
+else()
+    find_package(KWin REQUIRED COMPONENTS kwineffects)
+    find_package(KWinDBusInterface CONFIG REQUIRED)
 endif()
 
 if(${KWin_VERSION} VERSION_LESS 6.4)

@@ -78,11 +78,7 @@ void BlurEffectConfig::save()
                                          QStringLiteral("/Effects"),
                                          QDBusConnection::sessionBus());
 
-    if (QGuiApplication::platformName() == QStringLiteral("xcb")) {
-        interface.reconfigureEffect(QStringLiteral("better_blur_dx_x11"));
-    } else {
-        interface.reconfigureEffect(QStringLiteral("better_blur_dx"));
-    }
+    interface.reconfigureEffect(QStringLiteral("better_blur_dx"));
 }
 
 } // namespace KWin

@@ -11,7 +11,16 @@ kconfig_add_kcfg_files(better_blur_dx_SOURCES
     blurconfig.kcfgc
 )
 
-if(BETTERBLUR_WAYLAND)
+if(BETTERBLUR_X11)
+    add_library(better_blur_dx MODULE ${better_blur_dx_SOURCES})
+    target_link_libraries(better_blur_dx PRIVATE
+        KDecoration3::KDecoration
+        KF6::ConfigGui
+        KWinX11::kwin
+    )
+    target_compile_definitions(better_blur_dx PRIVATE BETTERBLUR_X11)
+    install(TARGETS better_blur_dx DESTINATION ${KDE_INSTALL_PLUGINDIR}/kwin-x11/effects/plugins)
+else()
     add_library(better_blur_dx MODULE ${better_blur_dx_SOURCES})
     target_link_libraries(better_blur_dx PRIVATE
         KDecoration3::KDecoration
@@ -19,14 +28,4 @@ if(BETTERBLUR_WAYLAND)
         KWin::kwin
     )
     install(TARGETS better_blur_dx DESTINATION ${KDE_INSTALL_PLUGINDIR}/kwin/effects/plugins)
-endif()
-if(BETTERBLUR_X11)
-    add_library(better_blur_dx_x11 MODULE ${better_blur_dx_SOURCES})
-    target_link_libraries(better_blur_dx_x11 PRIVATE
-        KDecoration3::KDecoration
-        KF6::ConfigGui
-        KWinX11::kwin
-    )
-    target_compile_definitions(better_blur_dx_x11 PRIVATE BETTERBLUR_X11)
-    install(TARGETS better_blur_dx_x11 DESTINATION ${KDE_INSTALL_PLUGINDIR}/kwin-x11/effects/plugins)
 endif()
