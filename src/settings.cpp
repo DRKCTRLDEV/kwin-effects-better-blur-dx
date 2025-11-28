@@ -11,9 +11,9 @@ void BlurSettings::read()
     general.blurStrength = BlurConfig::blurStrength() - 1;
     general.noiseStrength = BlurConfig::noiseStrength();
     general.windowOpacityAffectsBlur = BlurConfig::transparentBlur();
-    general.brightness = BlurConfig::brightness();
-    general.saturation = BlurConfig::saturation();
-    general.contrast = BlurConfig::contrast();
+    general.brightness = BlurConfig::brightness() / 100.0;
+    general.saturation = BlurConfig::saturation() / 100.0;
+    general.contrast = BlurConfig::contrast() / 100.0;
 
     forceBlur.windowClasses.clear();
     const auto blank = QStringLiteral("blank");

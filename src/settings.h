@@ -18,9 +18,9 @@ struct GeneralSettings
     int blurStrength;
     int noiseStrength;
     bool windowOpacityAffectsBlur;
-    float brightness;
-    float saturation;
-    float contrast;
+    qreal brightness;
+    qreal saturation;
+    qreal contrast;
 };
 
 struct ForceBlurSettings
