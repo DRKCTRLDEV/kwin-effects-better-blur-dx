@@ -33,6 +33,7 @@ private:
         QWidget *const heightHintWidget = nullptr
     );
     void setupContextualHelp();
+    void setupSliderSpinBoxSync();
 };
 
 } // namespace KWin

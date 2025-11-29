@@ -1,8 +1,8 @@
 cmake_minimum_required(VERSION 3.16.0)
 
-project(kwin_better_blur_dx)
-set(PROJECT_VERSION "1.6.0-dev")
-set(PROJECT_VERSION_MAJOR 0)
+project(kwin_better_blur_dx VERSION 1.6.0)
+set(PROJECT_VERSION_SUFFIX "-dev")
+set(PROJECT_VERSION_FULL "${PROJECT_VERSION}${PROJECT_VERSION_SUFFIX}")
 
 set(KF_MIN_VERSION "5.240.0")
 set(QT_MIN_VERSION "6.6.0")
@@ -12,11 +12,12 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# CPack configuration
 set(CPACK_PACKAGE_NAME "kwin-better-blur-dx")
 set(CPACK_PACKAGING_INSTALL_PREFIX "/usr")
 set(CPACK_PACKAGE_FILE_NAME "kwin-better-blur-dx")
-set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
-set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fork of kwin-better-blur, which itself is a fork of the default KDE Blur that includes useful additions, with continued development")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION_FULL}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Fork of the KWin Blur effect with force blur and additional features")
 include(CPack)
 
 if(NOT CMAKE_BUILD_TYPE)

@@ -24,4 +24,4 @@ else()
     install(TARGETS kwin_better_blur_dx_config DESTINATION ${KDE_INSTALL_PLUGINDIR}/kwin/effects/configs)
 endif()
 
-add_compile_definitions(ABOUT_VERSION_STRING="${PROJECT_VERSION}")
+add_compile_definitions(ABOUT_VERSION_STRING="${PROJECT_VERSION_FULL}")

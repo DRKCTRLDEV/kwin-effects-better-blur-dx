@@ -4,17 +4,10 @@
     SPDX-License-Identifier: GPL-2.0-or-later
 */
 #include "blur_config.h"
-
-//#include <config-kwin.h>
-
-// KConfigSkeleton
 #include "blurconfig.h"
 
 #include <KPluginFactory>
 #include "kwineffects_interface.h"
-
-#include <QFileDialog>
-#include <QPushButton>
 
 namespace KWin
 {
@@ -37,6 +30,7 @@ BlurEffectConfig::BlurEffectConfig(QObject *parent, const KPluginMetaData &data)
     }
 
     setupContextualHelp();
+    setupSliderSpinBoxSync();
 }
 
 BlurEffectConfig::~BlurEffectConfig()
@@ -68,6 +62,16 @@ void BlurEffectConfig::setupContextualHelp()
         QStringLiteral("Use <code>$$</code> for literal dollar sign.</p>"),
         ui.windowClassesBriefDescription
     );
+}
+
+void BlurEffectConfig::setupSliderSpinBoxSync()
+{
+    // Sync spinbox values with slider values on load
+    ui.blurStrengthSpinBox->setValue(ui.kcfg_BlurStrength->value());
+    ui.noiseStrengthSpinBox->setValue(ui.kcfg_NoiseStrength->value());
+    ui.brightnessSpinBox->setValue(ui.kcfg_Brightness->value());
+    ui.saturationSpinBox->setValue(ui.kcfg_Saturation->value());
+    ui.contrastSpinBox->setValue(ui.kcfg_Contrast->value());
 }
 
 void BlurEffectConfig::save()

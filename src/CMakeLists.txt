@@ -1,5 +1,13 @@
 add_subdirectory(kcm)
 
+# Tell automoc to recognize KWin effect factory macros
+set(CMAKE_AUTOMOC_MACRO_NAMES ${CMAKE_AUTOMOC_MACRO_NAMES}
+    "KWIN_EFFECT_FACTORY"
+    "KWIN_EFFECT_FACTORY_ENABLED"
+    "KWIN_EFFECT_FACTORY_SUPPORTED"
+    "KWIN_EFFECT_FACTORY_SUPPORTED_ENABLED"
+)
+
 set(better_blur_dx_SOURCES
     blur.cpp
     blur_extensions.cpp
