@@ -2,6 +2,7 @@ add_subdirectory(kcm)
 
 set(better_blur_dx_SOURCES
     blur.cpp
+    blur_extensions.cpp
     blur.qrc
     main.cpp
     settings.cpp
